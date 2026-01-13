@@ -58,6 +58,7 @@ enum{
 }; // end enum
 
 
+
 int main(int argc, const char* argv[]){
 
     if (argc < 2) {
@@ -85,8 +86,26 @@ int main(int argc, const char* argv[]){
         
         switch (op){
             case OP_ADD:
-                @{ADD}
+            
+                // Destination register
+                uint16_t r0 = (instr >> 9) & 0x7;
+                // First operand SR1
+                uint16_t r1 = (instr >> 5) & 0x7;
+                // Whether Immediate mode
+                uint16_t imm_flag = (instr >> 5) & 0x1;
+
+                if (imm_flag){
+                    uint16_t imm5 = sign_extend(instr & 0x1F, 5);
+                    reg[r0] = reg[r1] + imm5;
+                } // end if
+                else{
+                    // Second operand SR2
+                    uint16_t r2 = instr & 0x7;
+                    reg[r0] = reg[r1] + reg[r2];
+                } // end else
+
                 break;
+
             case OP_AND:
                 @{AND}
                 break;
@@ -136,3 +155,26 @@ int main(int argc, const char* argv[]){
     } // end while
     @{Shutdown}
 }
+
+
+uint16_t sign_extend(uint16_t x, int bit_count){
+    // If negative, shift the 1111111111111111 by bit count and OR
+    if ((x >> (bit_count - 1)) & 1){
+        x |= (0xFFFF << bit_count);
+    } // end if
+
+} // end function sign_extend
+
+void update_flags(uint16_t r){
+
+    if (reg[r] == 0){
+        reg[R_COND] = FL_ZRO;
+    } // end if
+    else if (reg[r] >> 15){
+        reg[R_COND] = FL_NEG;
+    } // end else if
+    else {
+        reg{R_COND} = FL_POS;
+    } // end else
+
+} // end function update_flags
