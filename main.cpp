@@ -92,6 +92,16 @@ int main(int argc, const char* argv[]){
         
         switch (op){
             case OP_ADD:
+                /*
+                Addition
+                Encodings : a) 0001 : DR : SR1 : 0 : 00 : SR2
+                            b) 0001 : DR : SR1 : 1 : imm5
+                Operatiom : if (bit[5] == 0)
+                                DR = SR1 + SR2
+                            else
+                                DR = SR1 + sign_extend(imm5)
+                            update_flags()
+                */
 
                 // Destination register
                 uint16_t r0 = (instr >> 9) & 0x7;
@@ -110,9 +120,22 @@ int main(int argc, const char* argv[]){
                     reg[r0] = reg[r1] + reg[r2];
                 } // end else
 
+                update_flags(r0);
+
                 break;
 
             case OP_AND:
+                /*
+                Bitwise And
+                Encodings : a) 0101 : DR : SR1 : 0 : 00 : SR2
+                            b) 0101 : DR : SR1 : 1 : imm5
+                Operation : if (bit[5] == 0)
+                                DR = SR1 and SR2
+                            else
+                                DR = SR1 and sign_extend(imm5)
+                            update_flags()
+                */
+
                 // Loading registers and addressing flag
                 uint16_t r0 = (instr >> 9) & 0x7;
                 uint16_t r1 = (instr >> 6) & 0x7;
@@ -127,19 +150,37 @@ int main(int argc, const char* argv[]){
                     reg[r0] = reg[r1] & reg[r2];
                 } // end else
 
+                update_flags(r0);
+
                 break;
 
             case OP_NOT:
+                /*
+                Bitwise Complement
+                Encodings : 1001 : DR : SR : 1 : 11111
+                Operation : DR = NOT(SR)
+                            update_flags()
+                */
 
                 uint16_t r0 = (instr >> 9) & 0x7;
                 uint16_t r1 = (instr >> 6) & 0x7;
 
                 reg[r0] = ~reg[r1];
+
                 update_flags[r0];
 
                 break;
 
             case OP_BR:
+                /*
+                Conditional Branch
+                Encodings : 0000 : n : z : p : PCoffset9
+                Operation : if ((n and N) or (z and Z) or (p and P))
+                                PC = PC + sign_extend(PCoffset9);
+                
+                Note : This is a PC relative branching, i.e. pc-> pc + offset
+                Example : BRzp LOOP : Branch to LOOP if the last result was zero or positive
+                */
                 
                 uint16_t pc_offset = sign_extend(instr & 0x1FF, 9);
                 uint16_t cond_flag = (instr >> 9) & 0x7;
@@ -150,7 +191,16 @@ int main(int argc, const char* argv[]){
                 break;
 
             case OP_JMP:
-                // Also handles RET, whats RET?
+                /*
+                Jump or Return from Subroutine
+                Encoding : 1100 : 000 : BaseR : 000000
+                Operation : PC = BaseR
+
+                Note : when BaseR = 111 , i.e R7, the JMP is considered as RET,
+                as RET usually loads PC with the contents of R7, where R7 contains the instruction
+                following the subroutine call instruction.
+                */
+
                 uint16_t r1 = (instr >> 6) & 0x7;
                 reg[R_PC] = reg[r1];
             
