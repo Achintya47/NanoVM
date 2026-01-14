@@ -123,20 +123,56 @@ int main(int argc, const char* argv[]){
                 break;
 
             case OP_NOT:
-                @{NOT}
+            
+                uint16_t r0 = (instr >> 9) & 0x7;
+                uint16_t r1 = (instr >> 6) & 0x7;
+
+                reg[r0] = ~reg[r1];
+                update_flags[r0];
+
                 break;
+
             case OP_BR:
-                @{BR}
+                
+                uint16_t pc_offset = sign_extend(instr & 0x1FF, 9);
+                uint16_t cond_flag = (instr >> 9) & 0x7;
+                if (cond_flag & reg[R_COND]){
+                    reg[R_PC] += pc_offset;
+                } // end if
+
                 break;
+
             case OP_JMP:
-                @{JMP}
+                // Also handles RET, whats RET?
+                uint16_t r1 = (instr >> 6) & 0x7;
+                reg[R_PC] = reg[r1];
+            
                 break;
+
             case OP_JSR:
-                @{JSR}
+
+                uint16_t long_flag = (instr >> 11) & 1;
+                reg[R_R7] = reg[R_PC];
+                if (long_flag){
+                    uint16_t long_pc_offset = sign_extend(instr & 0x7FF, 11);
+                    reg[R_PC] += long_pc_offset;
+                } // end if
+                else{
+                    uint16_t r1 = (instr >> 6) & 0x7;
+                    reg[R_PC] = reg[r1];
+                } // end else
+
                 break;
+
             case OP_LD:
-                @{LD}
+                
+                uint16_t r0 = (instr >> 9) & 0x7;
+                uint16_t pc_offset = sign_extend(instr & 0x1FF, 9);
+                reg[r0] = mem_read(reg[R_PC] + pc_offset);
+                update_flags(r0);
+
                 break;
+
             case OP_LDI:
 
                 // Destination registor (DR)
@@ -147,14 +183,21 @@ int main(int argc, const char* argv[]){
 
                 // Add pc_offset to the current PC, look at that memory location to get
                 // the final addres
-                reg[r0] = mem_read(mem_read)
+                reg[r0] = mem_read(mem_read);
                 update_flags(r0);
                 
                 break;
 
             case OP_LDR:
-                @{LDR}
+
+                uint16_t r0 = (instr >> 9) & 0x7;
+                uint16_t r1 = (instr >> 6) & 0x7;
+                uint16_t offset = sign_extend(instr & 0x3F, 6);
+                reg[r0] = mem_read(reg[r1] + offset);
+                update_flags(r0);
+
                 break;
+
             case OP_LEA:
                 @{LEA}
                 break;
