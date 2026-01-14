@@ -7,7 +7,6 @@ uint16_t memory[MEMORY_MAX];
 
 // Registers (10 - 16 bits each)
 enum{
-
     // General Purpose Registers
     R_R0 = 0,
     R_R1,
@@ -86,7 +85,7 @@ int main(int argc, const char* argv[]){
         
         switch (op){
             case OP_ADD:
-            
+
                 // Destination register
                 uint16_t r0 = (instr >> 9) & 0x7;
                 // First operand SR1
@@ -107,8 +106,22 @@ int main(int argc, const char* argv[]){
                 break;
 
             case OP_AND:
-                @{AND}
+                // Loading registers and addressing flag
+                uint16_t r0 = (instr >> 9) & 0x7;
+                uint16_t r1 = (instr >> 6) & 0x7;
+                uint16_t imm_flag = (instr >> 5) & 0x1;
+
+                if (imm_flag){
+                    uint16_t imm5 = sign_extend(instr & 0x1F, 5);
+                    reg[r0] = reg[r1] & imm5;
+                } // end if
+                else{
+                    uint16_t r2 = instr & 0x7;
+                    reg[r0] = reg[r1] & reg[r2];
+                } // end else
+
                 break;
+
             case OP_NOT:
                 @{NOT}
                 break;
@@ -125,8 +138,20 @@ int main(int argc, const char* argv[]){
                 @{LD}
                 break;
             case OP_LDI:
-                @{LDI}
+
+                // Destination registor (DR)
+                uint16_t r0 = (instr >> 9) & 0x7;
+
+                // PC_Offset
+                uint16_t pc_offset = sign_extend(instr & 0x1FF, 9);
+
+                // Add pc_offset to the current PC, look at that memory location to get
+                // the final addres
+                reg[r0] = mem_read(mem_read)
+                update_flags(r0);
+                
                 break;
+
             case OP_LDR:
                 @{LDR}
                 break;
@@ -178,3 +203,4 @@ void update_flags(uint16_t r){
     } // end else
 
 } // end function update_flags
+
