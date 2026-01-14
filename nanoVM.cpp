@@ -157,7 +157,7 @@ int main(int argc, const char* argv[]){
             case OP_NOT:
                 /*
                 Bitwise Complement
-                Encodings : 1001 : DR : SR : 1 : 11111
+                Encoding : 1001 : DR : SR : 1 : 11111
                 Operation : DR = NOT(SR)
                             update_flags()
                 */
@@ -207,7 +207,20 @@ int main(int argc, const char* argv[]){
                 break;
 
             case OP_JSR:
+                /*
+                Jump to Subroutine
+                Encodings : a) 0100 : 1 : PCoffset11
+                            b) 0100 : 0 : 00 : BaseR : 000000
+                Operation : R7 = PC
+                            if (bit[11] == 0)
+                                PC = BaseR
+                            else
+                                PC = PC + sign_extend(PCoffset11)
 
+                Note : Just like mentioned above, PC's following value is stored
+                in R7, which will be loaded during RET
+                */
+                
                 uint16_t long_flag = (instr >> 11) & 1;
                 reg[R_R7] = reg[R_PC];
                 if (long_flag){
@@ -222,15 +235,34 @@ int main(int argc, const char* argv[]){
                 break;
 
             case OP_LD:
+                /*
+                Load
+                Encoding : 0010 : DR : PCoffset9
+                Operation : DR = mem[PC + sign_extend(PCoffset9)]
+                            update_flags()
                 
+                Example : LD R4, VALUE : R4 <- mem[VALUE]
+                */
+
                 uint16_t r0 = (instr >> 9) & 0x7;
                 uint16_t pc_offset = sign_extend(instr & 0x1FF, 9);
                 reg[r0] = mem_read(reg[R_PC] + pc_offset);
+
                 update_flags(r0);
 
                 break;
 
             case OP_LDI:
+                /*
+                Load Indirect
+                Encoding : 1010 : DR : PCoffset9
+                Operation : DR = mem[mem[PC + sign_extend[PCoffset9]]]
+                            update_flags()
+                
+                Example : LDI R4, NOT_HERE : R4 <- mem[mem[ONEMORE]]
+                    Where,  NOT_HERE -> | HERE|
+                            HERE     -> |  32 | 
+                */
 
                 // Destination registor (DR)
                 uint16_t r0 = (instr >> 9) & 0x7;
@@ -241,30 +273,58 @@ int main(int argc, const char* argv[]){
                 // Add pc_offset to the current PC, look at that memory location to get
                 // the final addres
                 reg[r0] = mem_read(mem_read);
+
                 update_flags(r0);
                 
                 break;
 
             case OP_LDR:
+                /*
+                Load Base + Offset
+                Encoding : 0110 : DR : BaseR : offset6
+                Operation : DR = mem[BaseR + sign_extend(offset6)]
+                            update_flags()
+                
+                Example : LDR R4, R2, -5 : R4 <- mem[R2 - 5]
+                */
 
                 uint16_t r0 = (instr >> 9) & 0x7;
                 uint16_t r1 = (instr >> 6) & 0x7;
                 uint16_t offset = sign_extend(instr & 0x3F, 6);
                 reg[r0] = mem_read(reg[r1] + offset);
+
                 update_flags(r0);
 
                 break;
 
             case OP_LEA:
+                /*
+                Load Effective Address
+                Encoding : 1110 : DR : PCoffset9
+                Operation : DR = PC + sign_extend(PCoffset9)
+                            update_flags()
+                
+                Note : The offset addet to PC, and the resulting address is stored 
+                in DR.
+                Example : LEA R4, TARGET : R4 <- address of TARGET
+                */
                 
                 uint16_t r0 = (instr >> 9) & 0x7;
                 uint16_t pc_offset = sign_extend(instr & 0x1FF, 9);
                 reg[r0] = reg[R_PC] + pc_offset;
+
                 update_flags(r0);
 
                 break;
 
             case OP_ST:
+                /*
+                Store
+                Encoding : 0011 : SR : PCoffset9
+                Operation : mem[PC + sign_extend(PCoffset9)] = SR
+
+                Example : ST R4, HERE : mem[HERE] <- R4
+                */
                 
                 uint16_t r0 = (instr >> 9) & 0x7;
                 uint16_t pc_offset = sign_extend(instr & 0x1FF, 9);
@@ -273,6 +333,15 @@ int main(int argc, const char* argv[]){
                 break;
 
             case OP_STI:
+                /*
+                Store Indirect
+                Encoding : 1011 : SR : PCoffset9
+                Operation : mem[mem[PC + sign_extend[PCoffset9]]] = SR
+
+                Example : ST R4, NOT_HERE : mem[mem[NOT_HERE]] <- R4
+                    Where,  NOT_HERE -> | HERE|
+                            HERE     -> |  R4 | 
+                */
 
                 uint16_t r0 = (instr >> 9) & 0x7;
                 uint16_t pc_offset = sign_extend(instr & 0x1FF, 9);
@@ -281,6 +350,13 @@ int main(int argc, const char* argv[]){
                 break;
 
             case OP_STR:
+                /*
+                Store Base + Offset
+                Encoding : 0111 : SR : BaseR : offset6
+                Operation : mem[BaseR + sign_extend(offset6)] = SR
+
+                Example : STR R4, R2, -5 : mem[R2 - 5] <- R4
+                */
                 
                 uint16_t r0 = (instr >> 9) & 0x7;
                 uint16_t r1 = (instr >> 6) & 0x7;
@@ -290,8 +366,44 @@ int main(int argc, const char* argv[]){
                 break;
 
             case OP_TRAP:
-                @{TRAP}
+                /*
+                System Call
+                Encoding : 1111 : 0000 : trapvect8
+                Operation : R7 = PC
+                            PC = mem[zero_extend[trapvect8]]
+                
+                Note : Memory locations x0000 through x00FF, 256 in all are available
+                to contain syste, calls specified by their trap vectors
+                Example : Trap x23 : Directs OS to execute IN system call,
+                                     The starting address of this system call is
+                                     contained in memory location x0023.
+                */
+                
+                reg[R_R7] = reg[R_PC];
+
+                switch (instr & 0xFF){
+                    case TRAP_GETC:
+                        @{TRAP GETC}
+                        break;
+                    case TRAP_OUT:
+                        @{TRAP OUT}
+                        break;
+                    case TRAP_PUTS:
+                        @{TRAP PUTS}
+                        break;
+                    case TRAP_IN:
+                        @{TRAP IN}
+                        break;
+                    case TRAP_PUTSP:
+                        @{TRAP PUTSP}
+                        break;
+                    case TRAP_HALT:
+                        @{TRAP HALT}
+                        break;
+                } // end switch
+
                 break;
+
             case OP_RES:
             case OP_RTI:
             default:
