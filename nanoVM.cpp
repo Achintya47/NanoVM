@@ -63,6 +63,27 @@ enum{
     TRAP_HALT = 0x25 // halt the program
 }; // end enum
 
+uint16_t sign_extend(uint16_t x, int bit_count){
+    // If negative, shift the 1111111111111111 by bit count and OR
+    if ((x >> (bit_count - 1)) & 1){
+        x |= (0xFFFF << bit_count);
+    } // end if
+
+} // end function sign_extend
+
+void update_flags(uint16_t r){
+
+    if (reg[r] == 0){
+        reg[R_COND] = FL_ZRO;
+    } // end if
+    else if (reg[r] >> 15){
+        reg[R_COND] = FL_NEG;
+    } // end else if
+    else {
+        reg{R_COND} = FL_POS;
+    } // end else
+
+} // end function update_flags
 
 
 int main(int argc, const char* argv[]){
@@ -473,27 +494,4 @@ int main(int argc, const char* argv[]){
     } // end while
     @{Shutdown}
 }
-
-
-uint16_t sign_extend(uint16_t x, int bit_count){
-    // If negative, shift the 1111111111111111 by bit count and OR
-    if ((x >> (bit_count - 1)) & 1){
-        x |= (0xFFFF << bit_count);
-    } // end if
-
-} // end function sign_extend
-
-void update_flags(uint16_t r){
-
-    if (reg[r] == 0){
-        reg[R_COND] = FL_ZRO;
-    } // end if
-    else if (reg[r] >> 15){
-        reg[R_COND] = FL_NEG;
-    } // end else if
-    else {
-        reg{R_COND} = FL_POS;
-    } // end else
-
-} // end function update_flags
 
