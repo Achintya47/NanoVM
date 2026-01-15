@@ -1,5 +1,12 @@
 #include <cstdint>
 #include <iostream>
+#include <Windows.h>
+#include <conio.h>
+#include <signal.h>
+
+HANDLE hStdin = INVALID_HANDLE_VALUE;
+DWORD fdwMode, fdwOldMode;
+
 
 // Storage
 #define MEMORY_MAX (1 << 16)
@@ -25,6 +32,12 @@ enum{
 
 // Registers in an array
 uint16_t reg[R_COUNT];
+
+// Memory Mapped Registers (polling)
+enum{
+    MR_KBSR = 0xFE00, // Keyboard Status
+    MR_KBDR = 0xFE02 // Keyboard Data
+}; // end enum
 
 // Opcodes (4-Bit each)
 enum{
@@ -63,6 +76,39 @@ enum{
     TRAP_HALT = 0x25 // halt the program
 }; // end enum
 
+
+
+void mem_write(uint16_t address, uint16_t val){
+    if (address >= MEMORY_MAX) abort();
+    memory[address] = val;
+} // end function mem_write
+
+/**
+ * @brief Function to read from the memory, Keyboard polled only when 
+ * accessed
+ * 
+ * @param Address of the memory to be read
+ */
+uint16_t mem_read(uint16_t address){
+    if (address >= MEMORY_MAX) abort();
+
+    if (address == MR_KBSR){
+        if (check_key()){
+            memory[MR_KBSR] = (1 << 15);
+            memory[MR_KBDR] = static_cast<uint16_t>(getchar() & 0xFF);
+        } // end if
+        else{
+            memory[MR_KBSR] = 0;
+        } // end else
+    } // end if
+    return memory[address];
+ } // end function mem_read
+
+ uint16_t check_key(){
+    return WaitForSingleObject(hStdin, 1000) == WAIT_OBJECT_0 && _kbhit();
+ } // end function check_key
+
+
 uint16_t sign_extend(uint16_t x, int bit_count){
     // If negative, shift the 1111111111111111 by bit count and OR
     if ((x >> (bit_count - 1)) & 1){
@@ -71,6 +117,12 @@ uint16_t sign_extend(uint16_t x, int bit_count){
 
 } // end function sign_extend
 
+/**
+ * @brief Updates the Flag based on the value stored in the provided register
+ * to FL_ZRO, FL_NEG or FL_POS
+ * 
+ * @param A 16-bit address of the register
+ */
 void update_flags(uint16_t r){
 
     /*
@@ -89,19 +141,33 @@ void update_flags(uint16_t r){
 
 } // end function update_flags
 
+/**
+ * @brief Function to load an LC-3 image file (.obj) into the VM's memory
+ * following little-endian format
+ * 
+ * @param Takes an already opened LC-3 image file
+ */
 void read_image_file(FILE * file){
 
-    /* the origin tells us where in memory to place the image */
+    // The origin is Big-Endian, swap to little-endian
     uint16_t origin;
-    fread(&origin, sizeof(origin), 1, file);
+    // Adding fread error checking
+    if( fread(&origin, sizeof(origin), 1, file) != 1 )
+        abort();
+    
     origin = swap16(origin);
 
-    /* we know the maximum file size so we only need one fread */
+    if (origin >= MEMORY_MAX)
+        abort();
+    
+    // Compute how much we can read, prevents writing past VM memory
     uint16_t max_read = MEMORY_MAX - origin;
+    // Point to destination in VM memory
     uint16_t * p = memory + origin;
+    // Read rest of the file, in Big-Endian
     size_t read = fread(p, sizeof(uint16_t), max_read, file);
 
-    /* swap to little endian */
+    // Swap to Little-Endian
     while (read-- > 0){
         *p = swap16(*p);
         ++p;
@@ -109,10 +175,23 @@ void read_image_file(FILE * file){
 
 } // end function read_image_file
 
-uint16_t swap16(uint16_t x){
+// Swap Endians
+inline uint16_t swap16(uint16_t x){
     return (x << 8) | (x >> 8);
 } // end function swap16
 
+// Function to simple load the LC-3 file
+int read_image(const char* image_path){
+    
+    // Open the LC-3 image
+    FILE * file = fopen(image_path, "rb");
+    if (!file) return 0;
+    read_image_file(file);
+    fclose(file);
+
+    return 1;
+
+} // end function read_image
 
 int main(int argc, const char* argv[]){
 
