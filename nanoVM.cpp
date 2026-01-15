@@ -73,6 +73,10 @@ uint16_t sign_extend(uint16_t x, int bit_count){
 
 void update_flags(uint16_t r){
 
+    /*
+    Uptade the flags w.r.t to the result stored in register r
+    */
+
     if (reg[r] == 0){
         reg[R_COND] = FL_ZRO;
     } // end if
@@ -80,10 +84,34 @@ void update_flags(uint16_t r){
         reg[R_COND] = FL_NEG;
     } // end else if
     else {
-        reg{R_COND} = FL_POS;
+        reg[R_COND] = FL_POS;
     } // end else
 
 } // end function update_flags
+
+void read_image_file(FILE * file){
+
+    /* the origin tells us where in memory to place the image */
+    uint16_t origin;
+    fread(&origin, sizeof(origin), 1, file);
+    origin = swap16(origin);
+
+    /* we know the maximum file size so we only need one fread */
+    uint16_t max_read = MEMORY_MAX - origin;
+    uint16_t * p = memory + origin;
+    size_t read = fread(p, sizeof(uint16_t), max_read, file);
+
+    /* swap to little endian */
+    while (read-- > 0){
+        *p = swap16(*p);
+        ++p;
+    } // end while
+
+} // end function read_image_file
+
+uint16_t swap16(uint16_t x){
+    return (x << 8) | (x >> 8);
+} // end function swap16
 
 
 int main(int argc, const char* argv[]){
@@ -427,11 +455,16 @@ int main(int argc, const char* argv[]){
                         /*
                         Display a string stored in consecutive memory locations
                         character by character until x0000 encountered
+
+                        Note : LC3 implementation uses C-style cast, unsafe as it depends on
+                        the compiler and the character set of your terminal, a better version is
+                        static casting to an unsigned character (0 -> 255). 
+                        Its 'Sweeter - Better - Bolder'.
                         */
                         {
                         uint16_t* c = memory + reg[R_R0];
                             while(*c){
-                                putc((char)*c, stdout);
+                                putc(static_cast<unsigned char>(*c & 0xFF), stdout);
                                 ++c;
                             } // end while
                         } // end PUTS block
@@ -440,6 +473,7 @@ int main(int argc, const char* argv[]){
                         
                     case TRAP_IN:
                         /*
+                        Prompt for Input Character
                         */
                         printf("Enter a character : ");
                         char c = getchar();
