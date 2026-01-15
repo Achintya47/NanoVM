@@ -255,10 +255,6 @@ enum{
 }; // end enum
 
 
-// Forward declaration of fault
-void fault(VmFaultType, const std::string&, uint16_t);
-
-
 void disable_input_buffering(){
     hStdin = GetStdHandle(STD_INPUT_HANDLE);
     GetConsoleMode(hStdin, &fdwOldMode); // Save old mode
@@ -286,6 +282,151 @@ void restore_input_buffering(){
     printf("\n");
     exit(-2);
 } // end function handle_interrupt
+
+
+// Enum Class for Fault types
+enum class VmFaultType {
+    InvalidMemoryRead,
+    InvalidMemoryWrite,
+    InvalidOpcode,
+    InvalidTrap,
+    UnterminatedString,
+    IOError,
+    EOFOnInput,
+    InternalError
+};
+
+
+// Helper function to print Human-Readable info about the fault
+const char* fault_type_to_string(VmFaultType type) {
+    switch (type) {
+        case VmFaultType::InvalidMemoryRead:  return "Invalid memory read";
+        case VmFaultType::InvalidMemoryWrite: return "Invalid memory write";
+        case VmFaultType::UnterminatedString: return "Unterminated string";
+        case VmFaultType::InvalidOpcode:      return "Invalid opcode";
+        case VmFaultType::InvalidTrap:        return "Invalid trap";
+        case VmFaultType::IOError:             return "I/O error";
+        case VmFaultType::EOFOnInput:          return "EOF on input";
+        case VmFaultType::InternalError:       return "Internal VM error";
+        default:                               return "Unknown fault";
+    }
+} // end function fault_type_to_string
+
+
+// Helper function to print the PC Buffer
+void print_pc_trace() {
+    fprintf(stderr, "\nLast %zu instructions (oldest → newest):\n", TRACE_DEPTH);
+
+    size_t idx = pc_trace_index;
+    for (size_t i = 0; i < TRACE_DEPTH; ++i) {
+        uint16_t pc = pc_trace[idx];
+        fprintf(stderr, "  [%02zu] PC = 0x%04X\n", i, pc);
+        idx = (idx + 1) % TRACE_DEPTH;
+    }
+} // end function print_pc_trace
+
+
+// VM State Dump
+struct VMStateSnapshot {
+    uint16_t pc;
+    uint16_t reg[R_COUNT];
+    uint16_t cond;
+    uint64_t instruction_count;
+    VmFaultType fault_type;
+    uint16_t fault_address;
+    uint16_t faulting_instruction;
+
+    std::string message;
+};
+
+
+struct FaultDumpHeader {
+    uint32_t magic;      // 'LC3F'
+    uint16_t version;    // format version
+    uint16_t reserved;
+};
+
+
+constexpr uint32_t FAULT_MAGIC = 0x4C433346; // 'LC3F'
+
+// Write VM_STATE to a binary file
+void write_fault_dump(VmFaultType type, uint16_t fault_addr) {
+    FILE* f = fopen("vm_fault.cump","wb");
+    if (!f) return;
+
+    FaultDumpHeader header;
+    header.magic = FAULT_MAGIC;
+    header.version = 1;
+    header.reserved = 0;
+
+    fwrite(&header, sizeof(header), 1, f);
+
+    // Registers
+    fwrite(reg, sizeof(uint16_t), R_COUNT, f);
+
+    // PC trace
+    fwrite(&pc_trace_index, sizeof(pc_trace_index), 1, f);
+    fwrite(pc_trace, sizeof(uint16_t), TRACE_DEPTH, f);
+
+    // Fault info
+    fwrite(&type, sizeof(type), 1, f);
+    fwrite(&fault_addr, sizeof(fault_addr), 1, f);
+
+    // Full memory dump
+    fwrite(memory, sizeof(uint16_t), MEMORY_MAX, f);
+
+    fclose(f);
+
+} // end function write_fault_dump
+
+
+/**
+ * @brief Fault function, replaced with abort(), necessary to save the
+ * VM's state for better debugging
+ * 
+ * @param type : The fault type from the VmFaultType enum class
+ * @param msg : Fault message to be printed
+ * @param fault_addr : The address of the fault, defaults to zero 
+ */
+void fault(VmFaultType type, const std::string& msg, uint16_t fault_addr = 0){
+
+    restore_input_buffering();
+
+    VMStateSnapshot snap;
+    snap.pc = reg[R_PC];
+    snap.cond = reg[R_COND];
+    snap.instruction_count = reg[R_COUNT];
+    snap.fault_type = type;
+    snap.fault_address = fault_addr,
+    snap.faulting_instruction = memory[reg[R_PC]];
+    snap.message = msg;
+
+    for( int i = 0; i < R_COUNT; i++)
+        snap.reg[i] = reg[i];
+
+    write_fault_dump(type, fault_addr);
+
+    fprintf(stderr, "\n================ LC-3 VM FAULT ================\n");
+    fprintf(stderr, "Reason       : %s\n", fault_type_to_string(type));
+    fprintf(stderr, "Message      : %s\n", msg);
+    fprintf(stderr, "PC           : 0x%04X\n", snap.pc);
+    fprintf(stderr, "Instruction  : 0x%04X\n", snap.faulting_instruction);
+
+    if (fault_addr)
+        fprintf(stderr, "Fault Address: 0x%04X\n", fault_addr);
+
+    fprintf(stderr, "\nRegisters:\n");
+    for (int i = 0; i < 8; ++i)
+        fprintf(stderr, "R%d = 0x%04X\n", i, snap.reg[i]);
+
+    fprintf(stderr, "PC   = 0x%04X\n", snap.reg[R_PC]);
+    fprintf(stderr, "COND = 0x%04X\n", snap.reg[R_COND]);
+
+    print_pc_trace();
+
+    std::exit(EXIT_FAILURE);
+
+} // end function fault
 
 
 void mem_write(uint16_t address, uint16_t val){
@@ -415,145 +556,6 @@ int read_image(const char* image_path){
     return 1;
 
 } // end function read_image
-
-// Enum Class for Fault types
-enum class VmFaultType {
-    InvalidMemoryRead,
-    InvalidMemoryWrite,
-    InvalidOpcode,
-    InvalidTrap,
-    UnterminatedString,
-    IOError,
-    EOFOnInput,
-    InternalError
-};
-
-// Helper function to print Human-Readable info about the fault
-const char* fault_type_to_string(VmFaultType type) {
-    switch (type) {
-        case VmFaultType::InvalidMemoryRead:  return "Invalid memory read";
-        case VmFaultType::InvalidMemoryWrite: return "Invalid memory write";
-        case VmFaultType::UnterminatedString: return "Unterminated string";
-        case VmFaultType::InvalidOpcode:      return "Invalid opcode";
-        case VmFaultType::InvalidTrap:        return "Invalid trap";
-        case VmFaultType::IOError:             return "I/O error";
-        case VmFaultType::EOFOnInput:          return "EOF on input";
-        case VmFaultType::InternalError:       return "Internal VM error";
-        default:                               return "Unknown fault";
-    }
-}
-
-// Helper function to print the PC Buffer
-void print_pc_trace() {
-    fprintf(stderr, "\nLast %zu instructions (oldest → newest):\n", TRACE_DEPTH);
-
-    size_t idx = pc_trace_index;
-    for (size_t i = 0; i < TRACE_DEPTH; ++i) {
-        uint16_t pc = pc_trace[idx];
-        fprintf(stderr, "  [%02zu] PC = 0x%04X\n", i, pc);
-        idx = (idx + 1) % TRACE_DEPTH;
-    }
-}
-
-// VM State Dump
-struct VMStateSnapshot {
-    uint16_t pc;
-    uint16_t reg[R_COUNT];
-    uint16_t cond;
-    uint64_t instruction_count;
-    VmFaultType fault_type;
-    uint16_t fault_address;
-    uint16_t faulting_instruction;
-
-    std::string message;
-};
-
-struct FaultDumpHeader {
-    uint32_t magic;      // 'LC3F'
-    uint16_t version;    // format version
-    uint16_t reserved;
-};
-
-constexpr uint32_t FAULT_MAGIC = 0x4C433346; // 'LC3F'
-
-
-void write_fault_dump(VmFaultType type, uint16_t fault_addr) {
-    FILE* f = fopen("vm_fault.cump","wb");
-    if (!f) return;
-
-    FaultDumpHeader header;
-    header.magic = FAULT_MAGIC;
-    header.version = 1;
-    header.reserved = 0;
-
-    fwrite(&header, sizeof(header), 1, f);
-
-    // Registers
-    fwrite(reg, sizeof(uint16_t), R_COUNT, f);
-
-    // PC trace
-    fwrite(&pc_trace_index, sizeof(pc_trace_index), 1, f);
-    fwrite(pc_trace, sizeof(uint16_t), TRACE_DEPTH, f);
-
-    // Fault info
-    fwrite(&type, sizeof(type), 1, f);
-    fwrite(&fault_addr, sizeof(fault_addr), 1, f);
-
-    // Full memory dump
-    fwrite(memory, sizeof(uint16_t), MEMORY_MAX, f);
-
-    fclose(f);
-
-} // end function write_fault_dump
-
-
-/**
- * @brief Fault function, replaced with abort(), necessary to save the
- * VM's state for better debugging
- * 
- * @param type : The fault type from the VmFaultType enum class
- * @param msg : Fault message to be printed
- * @param fault_addr : The address of the fault, defaults to zero 
- */
-void fault(VmFaultType type, const std::string& msg, uint16_t fault_addr = 0){
-
-    restore_input_buffering();
-
-    VMStateSnapshot snap;
-    snap.pc = reg[R_PC];
-    snap.cond = reg[R_COND];
-    snap.instruction_count = reg[R_COUNT];
-    snap.fault_type = type;
-    snap.fault_address = fault_addr,
-    snap.faulting_instruction = memory[reg[R_PC]];
-    snap.message = msg;
-
-    for( int i = 0; i < R_COUNT; i++)
-        snap.reg[i] = reg[i];
-
-    write_fault_dump(type, fault_addr);
-
-    fprintf(stderr, "\n================ LC-3 VM FAULT ================\n");
-    fprintf(stderr, "Reason       : %s\n", fault_type_to_string(type));
-    fprintf(stderr, "Message      : %s\n", msg);
-    fprintf(stderr, "PC           : 0x%04X\n", snap.pc);
-    fprintf(stderr, "Instruction  : 0x%04X\n", snap.faulting_instruction);
-
-    if (fault_addr)
-        fprintf(stderr, "Fault Address: 0x%04X\n", fault_addr);
-
-    fprintf(stderr, "\nRegisters:\n");
-    for (int i = 0; i < 8; ++i)
-        fprintf(stderr, "R%d = 0x%04X\n", i, snap.reg[i]);
-
-    fprintf(stderr, "PC   = 0x%04X\n", snap.reg[R_PC]);
-    fprintf(stderr, "COND = 0x%04X\n", snap.reg[R_COND]);
-
-    print_pc_trace();
-
-    std::exit(EXIT_FAILURE);
-
-} // end function fault
 
 
 
