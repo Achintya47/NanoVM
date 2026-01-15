@@ -170,17 +170,21 @@ Also the name was inspired from Andrej Karpathy's nanoGPT.
 #include <conio.h>
 #include <signal.h>
 
+
 HANDLE hStdin = INVALID_HANDLE_VALUE;
 DWORD fdwMode, fdwOldMode;
+
 
 // Ring Buffer for VM's Program Counter
 constexpr size_t TRACE_DEPTH = 32;
 uint16_t pc_trace[TRACE_DEPTH];
 size_t pc_trace_index = 0;
 
+
 // Storage
 #define MEMORY_MAX (1 << 16)
 uint16_t memory[MEMORY_MAX];
+
 
 // Registers (10 - 16 bits each)
 enum{
@@ -203,11 +207,13 @@ enum{
 // Registers in an array
 uint16_t reg[R_COUNT];
 
+
 // Memory Mapped Registers (polling)
 enum{
     MR_KBSR = 0xFE00, // Keyboard Status
     MR_KBDR = 0xFE02 // Keyboard Data
 }; // end enum
+
 
 // Opcodes (4-Bit each)
 enum{
@@ -229,12 +235,14 @@ enum{
     OP_TRAP // execute trap
 }; // end enum
 
+
 // Condition flags
 enum{
     FL_POS =  1 << 0, // P
     FL_ZRO = 1 << 1, // Z
     FL_NEG = 1 << 2 // N
 }; // end enum
+
 
 // Trap Codes
 enum{
@@ -246,8 +254,10 @@ enum{
     TRAP_HALT = 0x25 // halt the program
 }; // end enum
 
+
 // Forward declaration of fault
 void fault(VmFaultType, const std::string&, uint16_t);
+
 
 void disable_input_buffering(){
     hStdin = GetStdHandle(STD_INPUT_HANDLE);
@@ -260,20 +270,23 @@ void disable_input_buffering(){
 
 } // end function disable_input_buffering
 
+
 void restore_input_buffering(){
     SetConsoleMode(hStdin, fdwOldMode);
 } // end function restore_input_buffering
+
 
  uint16_t check_key(){
     return WaitForSingleObject(hStdin, 0) == WAIT_OBJECT_0 && _kbhit();
  } // end function check_key
 
- void handle_interrupt(int signal)
-{
+
+ void handle_interrupt(int signal){
     restore_input_buffering();
     printf("\n");
     exit(-2);
-}
+} // end function handle_interrupt
+
 
 void mem_write(uint16_t address, uint16_t val){
     if (address >= MEMORY_MAX) 
@@ -282,6 +295,7 @@ void mem_write(uint16_t address, uint16_t val){
             address);
     memory[address] = val;
 } // end function mem_write
+
 
 /**
  * @brief Function to read from the memory, Keyboard polled only when 
@@ -322,6 +336,7 @@ uint16_t sign_extend(uint16_t x, int bit_count){
 
 } // end function sign_extend
 
+
 /**
  * @brief Updates the Flag based on the value stored in the provided register
  * to FL_ZRO, FL_NEG or FL_POS
@@ -345,10 +360,13 @@ void update_flags(uint16_t r){
     } // end else
 
 } // end function update_flags
+
+
 // Swap Endians
 inline uint16_t swap16(uint16_t x){
     return (x << 8) | (x >> 8);
 } // end function swap16
+
 
 /**
  * @brief Function to load an LC-3 image file (.obj) into the VM's memory
@@ -384,6 +402,21 @@ void read_image_file(FILE * file){
 
 } // end function read_image_file
 
+
+// Function to simple load the LC-3 file
+int read_image(const char* image_path){
+    
+    // Open the LC-3 image
+    FILE * file = fopen(image_path, "rb");
+    if (!file) return 0;
+    read_image_file(file);
+    fclose(file);
+
+    return 1;
+
+} // end function read_image
+
+// Enum Class for Fault types
 enum class VmFaultType {
     InvalidMemoryRead,
     InvalidMemoryWrite,
@@ -395,6 +428,7 @@ enum class VmFaultType {
     InternalError
 };
 
+// Helper function to print Human-Readable info about the fault
 const char* fault_type_to_string(VmFaultType type) {
     switch (type) {
         case VmFaultType::InvalidMemoryRead:  return "Invalid memory read";
@@ -409,6 +443,7 @@ const char* fault_type_to_string(VmFaultType type) {
     }
 }
 
+// Helper function to print the PC Buffer
 void print_pc_trace() {
     fprintf(stderr, "\nLast %zu instructions (oldest → newest):\n", TRACE_DEPTH);
 
@@ -420,7 +455,7 @@ void print_pc_trace() {
     }
 }
 
-
+// VM State Dump
 struct VMStateSnapshot {
     uint16_t pc;
     uint16_t reg[R_COUNT];
@@ -433,6 +468,53 @@ struct VMStateSnapshot {
     std::string message;
 };
 
+struct FaultDumpHeader {
+    uint32_t magic;      // 'LC3F'
+    uint16_t version;    // format version
+    uint16_t reserved;
+};
+
+constexpr uint32_t FAULT_MAGIC = 0x4C433346; // 'LC3F'
+
+
+void write_fault_dump(VmFaultType type, uint16_t fault_addr) {
+    FILE* f = fopen("vm_fault.cump","wb");
+    if (!f) return;
+
+    FaultDumpHeader header;
+    header.magic = FAULT_MAGIC;
+    header.version = 1;
+    header.reserved = 0;
+
+    fwrite(&header, sizeof(header), 1, f);
+
+    // Registers
+    fwrite(reg, sizeof(uint16_t), R_COUNT, f);
+
+    // PC trace
+    fwrite(&pc_trace_index, sizeof(pc_trace_index), 1, f);
+    fwrite(pc_trace, sizeof(uint16_t), TRACE_DEPTH, f);
+
+    // Fault info
+    fwrite(&type, sizeof(type), 1, f);
+    fwrite(&fault_addr, sizeof(fault_addr), 1, f);
+
+    // Full memory dump
+    fwrite(memory, sizeof(uint16_t), MEMORY_MAX, f);
+
+    fclose(f);
+
+} // end function write_fault_dump
+
+
+/**
+ * @brief Fault function, replaced with abort(), necessary to save the
+ * VM's state for better debugging
+ * 
+ * @param type : The fault type from the VmFaultType enum class
+ * @param msg : Fault message to be printed
+ * @param fault_addr : The address of the fault, defaults to zero 
+ */
 void fault(VmFaultType type, const std::string& msg, uint16_t fault_addr = 0){
 
     restore_input_buffering();
@@ -448,6 +530,8 @@ void fault(VmFaultType type, const std::string& msg, uint16_t fault_addr = 0){
 
     for( int i = 0; i < R_COUNT; i++)
         snap.reg[i] = reg[i];
+
+    write_fault_dump(type, fault_addr);
 
     fprintf(stderr, "\n================ LC-3 VM FAULT ================\n");
     fprintf(stderr, "Reason       : %s\n", fault_type_to_string(type));
@@ -466,24 +550,13 @@ void fault(VmFaultType type, const std::string& msg, uint16_t fault_addr = 0){
     fprintf(stderr, "COND = 0x%04X\n", snap.reg[R_COND]);
 
     print_pc_trace();
-    
+
     std::exit(EXIT_FAILURE);
 
 } // end function fault
 
 
-// Function to simple load the LC-3 file
-int read_image(const char* image_path){
-    
-    // Open the LC-3 image
-    FILE * file = fopen(image_path, "rb");
-    if (!file) return 0;
-    read_image_file(file);
-    fclose(file);
 
-    return 1;
-
-} // end function read_image
 
 int main(int argc, const char* argv[]){
 
