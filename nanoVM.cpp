@@ -1,3 +1,169 @@
+/*
+===============================================================================
+ nanoVM.cpp — LC-3 Virtual Machine Implementation
+===============================================================================
+
+OVERVIEW
+--------
+This file implements a complete LC-3 (Little Computer 3) virtual machine
+in C++. The LC-3 is a 16-bit educational architecture designed to teach
+computer organization, instruction sets, memory models, and system calls.
+
+This VM emulates:
+- A 16-bit word-addressed memory model
+- LC-3 registers and condition flags
+- The LC-3 instruction set (ADD, AND, BR, LD, ST, JSR, etc.)
+- Memory-mapped I/O for keyboard input
+- LC-3 TRAP routines (GETC, OUT, PUTS, IN, PUTSP, HALT)
+- Big-endian LC-3 object file loading on a little-endian host
+- A fetch–decode–execute execution loop
+
+This is a *hosted emulator*, not a hardware simulator. The guest (LC-3)
+program is treated as untrusted input and must not be allowed to corrupt
+host memory or state.
+
+-------------------------------------------------------------------------------
+
+ARCHITECTURE MODEL
+------------------
+
+1. MEMORY
+   - LC-3 memory is word-addressed.
+   - Each memory location stores one 16-bit word.
+   - MEMORY_MAX = 2^16 words (addresses 0x0000 – 0xFFFF).
+   - Implemented as: uint16_t memory[MEMORY_MAX]
+
+2. REGISTERS
+   - 8 General-purpose registers: R0–R7
+   - Program Counter: PC
+   - Condition Register: COND (N, Z, P flags)
+   - Stored in a single array for compactness:
+       uint16_t reg[R_COUNT]
+
+3. CONDITION FLAGS
+   - FL_NEG: Negative (bit 15 set)
+   - FL_ZRO: Zero
+   - FL_POS: Positive
+   - Updated after arithmetic/logical instructions.
+
+4. MEMORY-MAPPED I/O
+   - Keyboard is accessed via special memory addresses:
+       MR_KBSR (0xFE00): Keyboard Status Register
+       MR_KBDR (0xFE02): Keyboard Data Register
+   - Reading these addresses triggers host-side input polling.
+   - This mimics LC-3 hardware behavior.
+
+-------------------------------------------------------------------------------
+
+ENDIANNESS
+----------
+LC-3 object (.obj) files are stored in BIG-ENDIAN format.
+Most modern hosts (x86, Windows) are LITTLE-ENDIAN.
+
+Therefore:
+- Every 16-bit word read from an image file must be byte-swapped.
+- swap16() is used to convert file data into host representation.
+- Once loaded, all VM execution operates on host-endian uint16_t values.
+
+-------------------------------------------------------------------------------
+
+EXECUTION MODEL
+---------------
+The VM runs a classic fetch–decode–execute loop:
+
+1. FETCH
+   - Instruction is read from memory at PC.
+   - PC is incremented immediately.
+
+2. DECODE
+   - The top 4 bits of the instruction select the opcode.
+
+3. EXECUTE
+   - Instruction semantics are implemented via a switch(opcode).
+   - PC-relative addressing, register addressing, and indirect
+     addressing follow the LC-3 ISA specification exactly.
+
+4. UPDATE FLAGS
+   - Arithmetic and logical instructions update condition flags.
+
+-------------------------------------------------------------------------------
+
+TRAP HANDLING
+-------------
+TRAP instructions provide system services.
+This VM implements them directly (without an LC-3 OS):
+
+- TRAP_GETC  (0x20): Read one character, no echo
+- TRAP_OUT   (0x21): Output one character
+- TRAP_PUTS  (0x22): Output string (1 char per word)
+- TRAP_IN    (0x23): Prompt and echo one character
+- TRAP_PUTSP (0x24): Output packed string (2 chars per word)
+- TRAP_HALT  (0x25): Stop execution
+
+TRAP routines:
+- Use only the low 8 bits of characters
+- Explicitly mask and cast to avoid signed-char bugs
+- Flush output to behave interactively
+
+-------------------------------------------------------------------------------
+
+INPUT HANDLING (WINDOWS)
+------------------------
+- Console input buffering is disabled to emulate raw keyboard input.
+- Keyboard polling is non-blocking.
+- Uses Windows APIs:
+    - GetConsoleMode / SetConsoleMode
+    - WaitForSingleObject
+    - _kbhit()
+- This design mirrors LC-3 polling via KBSR/KBDR.
+
+-------------------------------------------------------------------------------
+
+SAFETY & DESIGN NOTES
+---------------------
+- Memory access is centralized through mem_read() and mem_write().
+- These functions form the VM's security boundary.
+- Guest programs must never access memory out of bounds.
+- Some abort() calls are placeholders and should eventually be replaced
+  with a structured VM fault-handling system.
+
+-------------------------------------------------------------------------------
+
+LIMITATIONS / INTENTIONAL SIMPLIFICATIONS
+-----------------------------------------
+- No full LC-3 operating system is emulated.
+- TRAP vectors are handled inline rather than via vector table jumps.
+- Interrupts, privilege modes, and RTI are not implemented.
+- This VM is designed for correctness, clarity, and learning—not speed.
+
+-------------------------------------------------------------------------------
+
+INTENDED USE
+------------
+This file is intended for:
+- Learning computer architecture
+- Studying instruction set emulation
+- Building debuggers and fault systems
+- Extending into a more advanced VM or teaching OS concepts
+
+-------------------------------------------------------------------------------
+
+AUTHOR NOTES
+------------
+This VM follows the LC-3 ISA specification closely and prioritizes:
+- Deterministic behavior
+- Explicit bit manipulation
+- Clear mapping from ISA → implementation
+- Host safety
+
+Every subtle-looking detail (masking, sign extension, bounds checks)
+exists for a reason.
+Also the name was inspired from Andrej Karpathy's nanoGPT. 
+
+===============================================================================
+*/
+
+
 #include <cstdint>
 #include <iostream>
 #include <Windows.h>
