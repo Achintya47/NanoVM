@@ -91,7 +91,7 @@ void restore_input_buffering(){
 } // end function restore_input_buffering
 
  uint16_t check_key(){
-    return WaitForSingleObject(hStdin, 1000) == WAIT_OBJECT_0 && _kbhit();
+    return WaitForSingleObject(hStdin, 0) == WAIT_OBJECT_0 && _kbhit();
  } // end function check_key
 
  void handle_interrupt(int signal)
@@ -133,6 +133,7 @@ uint16_t sign_extend(uint16_t x, int bit_count){
     if ((x >> (bit_count - 1)) & 1){
         x |= (0xFFFF << bit_count);
     } // end if
+    return x;
 
 } // end function sign_extend
 
@@ -159,6 +160,10 @@ void update_flags(uint16_t r){
     } // end else
 
 } // end function update_flags
+// Swap Endians
+inline uint16_t swap16(uint16_t x){
+    return (x << 8) | (x >> 8);
+} // end function swap16
 
 /**
  * @brief Function to load an LC-3 image file (.obj) into the VM's memory
@@ -193,11 +198,6 @@ void read_image_file(FILE * file){
     } // end while
 
 } // end function read_image_file
-
-// Swap Endians
-inline uint16_t swap16(uint16_t x){
-    return (x << 8) | (x >> 8);
-} // end function swap16
 
 // Function to simple load the LC-3 file
 int read_image(const char* image_path){
@@ -240,7 +240,7 @@ int main(int argc, const char* argv[]){
         uint16_t op = instr >> 12;
         
         switch (op){
-            case OP_ADD:
+            case OP_ADD: {
                 /*
                 Addition
                 Encodings : a) 0001 : DR : SR1 : 0 : 00 : SR2
@@ -255,7 +255,7 @@ int main(int argc, const char* argv[]){
                 // Destination register
                 uint16_t r0 = (instr >> 9) & 0x7;
                 // First operand SR1
-                uint16_t r1 = (instr >> 5) & 0x7;
+                uint16_t r1 = (instr >> 6) & 0x7;
                 // Whether Immediate mode
                 uint16_t imm_flag = (instr >> 5) & 0x1;
 
@@ -272,8 +272,8 @@ int main(int argc, const char* argv[]){
                 update_flags(r0);
 
                 break;
-
-            case OP_AND:
+            } // end Case OP_ADD
+            case OP_AND: {
                 /*
                 Bitwise And
                 Encodings : a) 0101 : DR : SR1 : 0 : 00 : SR2
@@ -302,8 +302,8 @@ int main(int argc, const char* argv[]){
                 update_flags(r0);
 
                 break;
-
-            case OP_NOT:
+            } // end Case OP_AND
+            case OP_NOT: {
                 /*
                 Bitwise Complement
                 Encoding : 1001 : DR : SR : 1 : 11111
@@ -319,8 +319,8 @@ int main(int argc, const char* argv[]){
                 update_flags(r0);
 
                 break;
-
-            case OP_BR:
+            } // end Case OP_NOT
+            case OP_BR: {
                 /*
                 Conditional Branch
                 Encodings : 0000 : n : z : p : PCoffset9
@@ -338,8 +338,8 @@ int main(int argc, const char* argv[]){
                 } // end if
 
                 break;
-
-            case OP_JMP:
+            } // end Case OP_BR
+            case OP_JMP: {
                 /*
                 Jump or Return from Subroutine
                 Encoding : 1100 : 000 : BaseR : 000000
@@ -354,8 +354,8 @@ int main(int argc, const char* argv[]){
                 reg[R_PC] = reg[r1];
             
                 break;
-
-            case OP_JSR:
+            } // end Case OP_JMP
+            case OP_JSR: {
                 /*
                 Jump to Subroutine
                 Encodings : a) 0100 : 1 : PCoffset11
@@ -382,8 +382,8 @@ int main(int argc, const char* argv[]){
                 } // end else
 
                 break;
-
-            case OP_LD:
+            } // end Case OP_JSR
+            case OP_LD: {
                 /*
                 Load
                 Encoding : 0010 : DR : PCoffset9
@@ -400,8 +400,8 @@ int main(int argc, const char* argv[]){
                 update_flags(r0);
 
                 break;
-
-            case OP_LDI:
+            } // end Case OP_LD
+            case OP_LDI: {
                 /*
                 Load Indirect
                 Encoding : 1010 : DR : PCoffset9
@@ -426,8 +426,8 @@ int main(int argc, const char* argv[]){
                 update_flags(r0);
                 
                 break;
-
-            case OP_LDR:
+            } // end Case OP_LDI
+            case OP_LDR: {
                 /*
                 Load Base + Offset
                 Encoding : 0110 : DR : BaseR : offset6
@@ -445,8 +445,8 @@ int main(int argc, const char* argv[]){
                 update_flags(r0);
 
                 break;
-
-            case OP_LEA:
+            } // end Case OP_LDR
+            case OP_LEA: {
                 /*
                 Load Effective Address
                 Encoding : 1110 : DR : PCoffset9
@@ -465,8 +465,8 @@ int main(int argc, const char* argv[]){
                 update_flags(r0);
 
                 break;
-
-            case OP_ST:
+            } // end Case OP_LEA
+            case OP_ST: {
                 /*
                 Store
                 Encoding : 0011 : SR : PCoffset9
@@ -480,8 +480,8 @@ int main(int argc, const char* argv[]){
                 mem_write(reg[R_PC] + pc_offset, reg[r0]);
 
                 break;
-
-            case OP_STI:
+            } // end Case OP_ST
+            case OP_STI: {
                 /*
                 Store Indirect
                 Encoding : 1011 : SR : PCoffset9
@@ -497,8 +497,8 @@ int main(int argc, const char* argv[]){
                 mem_write(mem_read(reg[R_PC] + pc_offset), reg[r0]);
         
                 break;
-
-            case OP_STR:
+            } // end Case OP_STI
+            case OP_STR: {
                 /*
                 Store Base + Offset
                 Encoding : 0111 : SR : BaseR : offset6
@@ -513,8 +513,8 @@ int main(int argc, const char* argv[]){
                 mem_write(reg[r1] + offset, reg[r0]);
 
                 break;
-
-            case OP_TRAP:
+            } // end Case OP_STR
+            case OP_TRAP: {
                 /*
                 System Call
                 Encoding : 1111 : 0000 : trapvect8
@@ -531,7 +531,7 @@ int main(int argc, const char* argv[]){
                 reg[R_R7] = reg[R_PC];
 
                 switch (instr & 0xFF){
-                    case TRAP_GETC:
+                    case TRAP_GETC: {
                         /*
                         Read one character, no Echo, character returned in R0
 
@@ -546,8 +546,8 @@ int main(int argc, const char* argv[]){
                         update_flags(R_R0);
 
                         break;
-
-                    case TRAP_OUT:
+                    } // end Case TRAP_GETC
+                    case TRAP_OUT: {
                         /*
                         Immediately flush the character to the output,
                         like an interactive session.
@@ -558,8 +558,8 @@ int main(int argc, const char* argv[]){
                         fflush(stdout);
 
                         break;
-
-                    case TRAP_PUTS:
+                    } // end Case TRAP_OUT
+                    case TRAP_PUTS: {
                         /*
                         Display a string stored in consecutive memory locations
                         character by character until x0000 encountered
@@ -581,8 +581,8 @@ int main(int argc, const char* argv[]){
                         } // end PUTS block
 
                         break;
-                        
-                    case TRAP_IN:
+                    } // end Case TRAP_PUTS
+                    case TRAP_IN: {
                         /*
                         Prompt for Input Character (with type safety)
                         */
@@ -598,9 +598,9 @@ int main(int argc, const char* argv[]){
                         update_flags(R_R0);
 
                         break;
-
-                    case TRAP_PUTSP:
-                        {
+                    } // end Case TRAP_IN
+                    case TRAP_PUTSP: {
+        
                             /*
                             One char per byte (two bytes per word)
                             extract low and high bytes per LC-3 PUTSP spec
@@ -624,17 +624,19 @@ int main(int argc, const char* argv[]){
                                 ++c;
                             } // end While
                             fflush(stdout);
-                        } // end PUTSP block
+                        
 
                         break;
+                    } // end Case TRAP_PUTSP 
 
-                    case TRAP_HALT:
+                    case TRAP_HALT: {
 
                         puts("HALT");
                         fflush(stdout);
                         running = 0;
 
                         break;
+                    } // end Case TRAP_HALT
 
                 } // end switch
 
@@ -645,8 +647,11 @@ int main(int argc, const char* argv[]){
             default:
                 break;
 
-        } // end switch
-    } // end while
-    restore_input_buffering();
-}
+            } // end Case TRAP
 
+        } // end Switch
+        
+        restore_input_buffering();
+    }
+
+}
