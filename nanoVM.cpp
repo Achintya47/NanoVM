@@ -241,6 +241,9 @@ enum{
     TRAP_HALT = 0x25 // halt the program
 }; // end enum
 
+// Forward declaration of fault
+void fault(VmFaultType, const std::string&, uint16_t);
+
 void disable_input_buffering(){
     hStdin = GetStdHandle(STD_INPUT_HANDLE);
     GetConsoleMode(hStdin, &fdwOldMode); // Save old mode
@@ -268,7 +271,10 @@ void restore_input_buffering(){
 }
 
 void mem_write(uint16_t address, uint16_t val){
-    if (address >= MEMORY_MAX) abort();
+    if (address >= MEMORY_MAX) 
+        fault(VmFaultType::InvalidMemoryWrite,
+            "Write Outisde memory bounds",
+            address);
     memory[address] = val;
 } // end function mem_write
 
@@ -279,12 +285,20 @@ void mem_write(uint16_t address, uint16_t val){
  * @param Address of the memory to be read
  */
 uint16_t mem_read(uint16_t address){
-    if (address >= MEMORY_MAX) abort();
+    if (address >= MEMORY_MAX) 
+        fault(VmFaultType::InvalidMemoryRead, 
+            "Read outside memory bounds",
+            address);
 
     if (address == MR_KBSR){
         if (check_key()){
+            int ch = getchar();
+            if (ch == EOF)  
+                fault(VmFaultType::EOFOnInput,
+                    "EOF while reading keyboard");
+
             memory[MR_KBSR] = (1 << 15);
-            memory[MR_KBDR] = static_cast<uint16_t>(getchar() & 0xFF);
+            memory[MR_KBDR] = static_cast<uint16_t>(ch & 0xFF);
         } // end if
         else{
             memory[MR_KBSR] = 0;
@@ -364,6 +378,80 @@ void read_image_file(FILE * file){
     } // end while
 
 } // end function read_image_file
+
+enum class VmFaultType {
+    InvalidMemoryRead,
+    InvalidMemoryWrite,
+    InvalidOpcode,
+    InvalidTrap,
+    UnterminatedString,
+    IOError,
+    EOFOnInput,
+    InternalError
+};
+
+const char* fault_type_to_string(VmFaultType type) {
+    switch (type) {
+        case VmFaultType::InvalidMemoryRead:  return "Invalid memory read";
+        case VmFaultType::InvalidMemoryWrite: return "Invalid memory write";
+        case VmFaultType::UnterminatedString: return "Unterminated string";
+        case VmFaultType::InvalidOpcode:      return "Invalid opcode";
+        case VmFaultType::InvalidTrap:        return "Invalid trap";
+        case VmFaultType::IOError:             return "I/O error";
+        case VmFaultType::EOFOnInput:          return "EOF on input";
+        case VmFaultType::InternalError:       return "Internal VM error";
+        default:                               return "Unknown fault";
+    }
+}
+
+struct VMStateSnapshot {
+    uint16_t pc;
+    uint16_t reg[R_COUNT];
+    uint16_t cond;
+    uint64_t instruction_count;
+    VmFaultType fault_type;
+    uint16_t fault_address;
+    uint16_t faulting_instruction;
+
+    std::string message;
+};
+
+void fault(VmFaultType type, const std::string& msg, uint16_t fault_addr = 0){
+
+    restore_input_buffering();
+
+    VMStateSnapshot snap;
+    snap.pc = reg[R_PC];
+    snap.cond = reg[R_COND];
+    snap.instruction_count = reg[R_COUNT];
+    snap.fault_type = type;
+    snap.fault_address = fault_addr,
+    snap.faulting_instruction = memory[reg[R_PC]];
+    snap.message = msg;
+
+    for( int i = 0; i < R_COUNT; i++)
+        snap.reg[i] = reg[i];
+
+    fprintf(stderr, "\n================ LC-3 VM FAULT ================\n");
+    fprintf(stderr, "Reason       : %s\n", fault_type_to_string(type));
+    fprintf(stderr, "Message      : %s\n", msg);
+    fprintf(stderr, "PC           : 0x%04X\n", snap.pc);
+    fprintf(stderr, "Instruction  : 0x%04X\n", snap.faulting_instruction);
+
+    if (fault_addr)
+        fprintf(stderr, "Fault Address: 0x%04X\n", fault_addr);
+
+    fprintf(stderr, "\nRegisters:\n");
+    for (int i = 0; i < 8; ++i)
+        fprintf(stderr, "R%d = 0x%04X\n", i, snap.reg[i]);
+
+    fprintf(stderr, "PC   = 0x%04X\n", snap.reg[R_PC]);
+    fprintf(stderr, "COND = 0x%04X\n", snap.reg[R_COND]);
+
+    std::exit(EXIT_FAILURE);
+
+} // end function fault
+
 
 // Function to simple load the LC-3 file
 int read_image(const char* image_path){
@@ -737,7 +825,10 @@ int main(int argc, const char* argv[]){
                         */
                         {
 
-                        if(reg[R_R0] >= MEMORY_MAX) abort();
+                        if(reg[R_R0] >= MEMORY_MAX)
+                            fault(VmFaultType::UnterminatedString,
+                                "PUTS string not Null-Terminated",
+                                reg[R_R0]);
 
                         uint16_t* c = memory + reg[R_R0];
                             while(*c){
@@ -778,7 +869,10 @@ int main(int argc, const char* argv[]){
                             
                             */
 
-                            if (reg[R_R0] >= MEMORY_MAX) abort();
+                            if (reg[R_R0] >= MEMORY_MAX) 
+                                fault(VmFaultType::UnterminatedString,
+                                    "PUTSP string not Null-Terminated",
+                                    reg[R_R0]);
 
                             uint16_t* c = memory + reg[R_R0];
                             while (*c)
@@ -804,17 +898,23 @@ int main(int argc, const char* argv[]){
                         break;
                     } // end Case TRAP_HALT
 
-                } // end switch
+                    default : 
+                        fault(VmFaultType::InvalidTrap,
+                            "Unknown TRAP vector",
+                            instr & 0xFF);
+
+                } // end switch Trap
 
                 break;
+            } // end Case Trap
 
             case OP_RES:
             case OP_RTI:
-            default:
+            default: 
+                fault(VmFaultType::InvalidOpcode,
+                    "Unknown instruction opcode");
                 break;
-
-            } // end Case TRAP
-
+                
         } // end Switch
         
         restore_input_buffering();
