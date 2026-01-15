@@ -216,7 +216,7 @@ int main(int argc, const char* argv[]){
 
                 reg[r0] = ~reg[r1];
 
-                update_flags[r0];
+                update_flags(r0);
 
                 break;
 
@@ -433,10 +433,16 @@ int main(int argc, const char* argv[]){
                 switch (instr & 0xFF){
                     case TRAP_GETC:
                         /*
-                        Input a character and update flags
+                        Read one character, no Echo, character returned in R0
+
+                        Note : Again, LC3 implementation isn't type-safe, thus when an EOF
+                        character is returned (-1), R_R0's value becomes 0xFFFF, thus our character
+                        space is violated.
                         */
 
-                        reg[R_R0] = (uint16_t)getchar();
+                        int ch = getchar();
+                        reg[R_R0] = static_cast<uint16_t>(ch & 0xFF);
+
                         update_flags(R_R0);
 
                         break;
@@ -444,9 +450,11 @@ int main(int argc, const char* argv[]){
                     case TRAP_OUT:
                         /*
                         Immediately flush the character to the output,
-                        like an interactive session
+                        like an interactive session.
+
+                        Note : Type Safety Implemented
                         */
-                        putc((char)reg[R_R0], stdout);
+                        putc(static_cast<unsigned char>(reg[R_R0] & 0xFF), stdout);
                         fflush(stdout);
 
                         break;
@@ -462,6 +470,9 @@ int main(int argc, const char* argv[]){
                         Its 'Sweeter - Better - Bolder'.
                         */
                         {
+
+                        if(reg[R_R0] >= MEMORY_MAX) abort();
+
                         uint16_t* c = memory + reg[R_R0];
                             while(*c){
                                 putc(static_cast<unsigned char>(*c & 0xFF), stdout);
@@ -473,14 +484,17 @@ int main(int argc, const char* argv[]){
                         
                     case TRAP_IN:
                         /*
-                        Prompt for Input Character
+                        Prompt for Input Character (with type safety)
                         */
+
                         printf("Enter a character : ");
-                        char c = getchar();
-                        putc(c, stdout);
                         fflush(stdout);
-                        reg[R_R0] = (uint16_t)c;
-                        
+
+                        int ch = getchar();
+                        putc(ch, stdout);
+                        fflush(stdout);
+
+                        reg[R_R0] = static_cast<uint16_t>(ch & 0xFF);
                         update_flags(R_R0);
 
                         break;
@@ -489,15 +503,23 @@ int main(int argc, const char* argv[]){
                         {
                             /*
                             One char per byte (two bytes per word)
-                            here we need to swap back to
-                            big endian format 
+                            extract low and high bytes per LC-3 PUTSP spec
+                            Word Bits : 
+                                [high byte][low byte]
+
+                            Note :  char1 -> Low Byte
+                                    char2 -> High Byte
+                            
                             */
+
+                            if (reg[R_R0] >= MEMORY_MAX) abort();
+
                             uint16_t* c = memory + reg[R_R0];
                             while (*c)
                             {
-                                char char1 = (*c) & 0xFF;
+                                unsigned char char1 = (*c) & 0xFF;
                                 putc(char1, stdout);
-                                char char2 = (*c) >> 8;
+                                unsigned char char2 = (*c) >> 8;
                                 if (char2) putc(char2, stdout);
                                 ++c;
                             } // end While
