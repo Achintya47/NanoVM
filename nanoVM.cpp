@@ -94,6 +94,13 @@ void restore_input_buffering(){
     return WaitForSingleObject(hStdin, 1000) == WAIT_OBJECT_0 && _kbhit();
  } // end function check_key
 
+ void handle_interrupt(int signal)
+{
+    restore_input_buffering();
+    printf("\n");
+    exit(-2);
+}
+
 void mem_write(uint16_t address, uint16_t val){
     if (address >= MEMORY_MAX) abort();
     memory[address] = val;
@@ -207,6 +214,9 @@ int read_image(const char* image_path){
 
 int main(int argc, const char* argv[]){
 
+    signal(SIGINT, handle_interrupt);
+    disable_input_buffering();
+
     if (argc < 2) {
         std::cout << "LC3 [image-file1 ..\n]" << std::endl;
         exit(2);
@@ -218,7 +228,6 @@ int main(int argc, const char* argv[]){
             exit(1);
         } // end if
     } // end for
-    @{Setup}
 
     reg[R_COND] = FL_ZRO;
     enum {PC_START = 0x3000};
@@ -412,7 +421,7 @@ int main(int argc, const char* argv[]){
 
                 // Add pc_offset to the current PC, look at that memory location to get
                 // the final addres
-                reg[r0] = mem_read(mem_read);
+                reg[r0] = mem_read(mem_read(reg[R_PC] + pc_offset));
 
                 update_flags(r0);
                 
@@ -634,11 +643,10 @@ int main(int argc, const char* argv[]){
             case OP_RES:
             case OP_RTI:
             default:
-                @{BAD OPCODE}
                 break;
 
         } // end switch
     } // end while
-    @{Shutdown}
+    restore_input_buffering();
 }
 
