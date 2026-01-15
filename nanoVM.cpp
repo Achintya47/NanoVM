@@ -7,7 +7,6 @@
 HANDLE hStdin = INVALID_HANDLE_VALUE;
 DWORD fdwMode, fdwOldMode;
 
-
 // Storage
 #define MEMORY_MAX (1 << 16)
 uint16_t memory[MEMORY_MAX];
@@ -76,7 +75,24 @@ enum{
     TRAP_HALT = 0x25 // halt the program
 }; // end enum
 
+void disable_input_buffering(){
+    hStdin = GetStdHandle(STD_INPUT_HANDLE);
+    GetConsoleMode(hStdin, &fdwOldMode); // Save old mode
 
+    fdwMode = fdwOldMode ^ ENABLE_ECHO_INPUT ^ ENABLE_LINE_INPUT;
+
+    SetConsoleMode(hStdin, fdwMode);
+    FlushConsoleInputBuffer(hStdin);
+
+} // end function disable_input_buffering
+
+void restore_input_buffering(){
+    SetConsoleMode(hStdin, fdwOldMode);
+} // end function restore_input_buffering
+
+ uint16_t check_key(){
+    return WaitForSingleObject(hStdin, 1000) == WAIT_OBJECT_0 && _kbhit();
+ } // end function check_key
 
 void mem_write(uint16_t address, uint16_t val){
     if (address >= MEMORY_MAX) abort();
@@ -103,10 +119,6 @@ uint16_t mem_read(uint16_t address){
     } // end if
     return memory[address];
  } // end function mem_read
-
- uint16_t check_key(){
-    return WaitForSingleObject(hStdin, 1000) == WAIT_OBJECT_0 && _kbhit();
- } // end function check_key
 
 
 uint16_t sign_extend(uint16_t x, int bit_count){
