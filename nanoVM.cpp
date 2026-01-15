@@ -173,6 +173,11 @@ Also the name was inspired from Andrej Karpathy's nanoGPT.
 HANDLE hStdin = INVALID_HANDLE_VALUE;
 DWORD fdwMode, fdwOldMode;
 
+// Ring Buffer for VM's Program Counter
+constexpr size_t TRACE_DEPTH = 32;
+uint16_t pc_trace[TRACE_DEPTH];
+size_t pc_trace_index = 0;
+
 // Storage
 #define MEMORY_MAX (1 << 16)
 uint16_t memory[MEMORY_MAX];
@@ -404,6 +409,18 @@ const char* fault_type_to_string(VmFaultType type) {
     }
 }
 
+void print_pc_trace() {
+    fprintf(stderr, "\nLast %zu instructions (oldest → newest):\n", TRACE_DEPTH);
+
+    size_t idx = pc_trace_index;
+    for (size_t i = 0; i < TRACE_DEPTH; ++i) {
+        uint16_t pc = pc_trace[idx];
+        fprintf(stderr, "  [%02zu] PC = 0x%04X\n", i, pc);
+        idx = (idx + 1) % TRACE_DEPTH;
+    }
+}
+
+
 struct VMStateSnapshot {
     uint16_t pc;
     uint16_t reg[R_COUNT];
@@ -448,6 +465,8 @@ void fault(VmFaultType type, const std::string& msg, uint16_t fault_addr = 0){
     fprintf(stderr, "PC   = 0x%04X\n", snap.reg[R_PC]);
     fprintf(stderr, "COND = 0x%04X\n", snap.reg[R_COND]);
 
+    print_pc_trace();
+    
     std::exit(EXIT_FAILURE);
 
 } // end function fault
@@ -489,6 +508,9 @@ int main(int argc, const char* argv[]){
 
     int running = 1;
     while (running){
+
+        pc_trace[pc_trace_index] = reg[R_PC];
+        pc_trace_index = (pc_trace_index + 1) % TRACE_DEPTH;
 
         uint16_t instr = mem_read(reg[R_PC]++);
         uint16_t op = instr >> 12;
@@ -914,7 +936,7 @@ int main(int argc, const char* argv[]){
                 fault(VmFaultType::InvalidOpcode,
                     "Unknown instruction opcode");
                 break;
-                
+
         } // end Switch
         
         restore_input_buffering();
