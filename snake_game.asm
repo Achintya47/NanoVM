@@ -1,0 +1,107 @@
+.ORIG x3000
+START
+    JSR CLEAR_SCREEN
+    JSR DRAW_BOARD
+MAIN_LOOP
+    JSR GET_INPUT
+    JSR HANDLE_INPUT
+    JSR CHECK_WIN
+    JSR CLEAR_SCREEN
+    JSR DRAW_BOARD
+    BR MAIN_LOOP
+
+CLEAR_SCREEN
+    LEA R0, CLEAR_STR
+    TRAP x22
+    RET
+
+DRAW_BOARD
+    LEA R0, BOARD
+    TRAP x22
+    RET
+
+GET_INPUT
+    TRAP x20
+    ADD R1, R0, #0
+    RET
+
+HANDLE_INPUT
+    ADD R2, R1, #-119
+    BRz MOVE_UP
+
+    ADD R2, R1, #-115
+    BRz MOVE_DOWN
+
+    ADD R2, R1, #-97
+    BRz MOVE_LEFT
+
+    ADD R2, R1, #-100
+    BRz MOVE_RIGHT
+
+    RET
+
+MOVE_UP
+    LD R0, PLAYER_Y
+    ADD RO, R0, #-1
+    BRz END_MOVE
+    ST R0, PLAYER_Y
+    RET
+
+MOVE_DOWN
+    LAD RO, PLAYER_Y
+    ADD RO, R0, #-1
+    ADD R2, R0, #-5
+    BRzp END_MOVE
+    ST RO, PLAYER_Y
+    RET
+
+MOVE_LEFT
+    LD R0, PLAYER_X
+    ADD R0, R0, #-1
+    BRn END_MOVE
+    ST R0, PLAYER_X
+    RET
+
+MOVE_RIGHT
+    LD R0, PLAYER_X
+    ADD RO, RO, #1
+    ADD R2, R0, #-5
+    BRzp END_MOVE
+    ST R0, PLAYER_X
+    RET
+
+END_MOVE
+    RET
+
+CHECK_WIN
+    LD R0, PLAYER_X
+    ADD R0, R0, #-4
+    BRnp NOT_WIN
+
+    LD R1, PLAYER_Y
+    ADD R1, R1, #-4
+    BRnp NOT_WIN
+
+    LEA R0, WIN_MSG
+    TRAP x22
+    TRAP x25
+
+NOT_WIN
+    RET
+
+CLEAR_STR
+    .STRINGZ "\n\n\n\n\n\n\n\n\n\n"
+
+BOARD
+    .STRINGZ ".....\n"
+    .STRINGZ ".....\n"
+    .STRINGZ "..@..\n"
+    .STRINGZ ".....\n"
+    .STRINGZ "....X\n"
+
+PLAYER_X .FILL #2
+PLAYER_Y .FILL #2
+
+WIN_MSG
+    .STRINGZ "\nYOU WIN!!\n"
+    .END
