@@ -1,5 +1,12 @@
-# nanoVM — LC-3 Virtual Machine (C++)
-
+<pre align = "center">
+  ███╗   ██╗ █████╗ ███╗   ██╗ ██████╗ ██╗   ██╗███╗   ███╗
+████╗  ██║██╔══██╗████╗  ██║██╔═══██╗██║   ██║████╗ ████║
+██╔██╗ ██║███████║██╔██╗ ██║██║   ██║██║   ██║██╔████╔██║
+██║╚██╗██║██╔══██║██║╚██╗██║██║   ██║╚██╗ ██╔╝██║╚██╔╝██║
+██║ ╚████║██║  ██║██║ ╚████║╚██████╔╝ ╚████╔╝ ██║ ╚═╝ ██║
+╚═╝  ╚═══╝╚═╝  ╚═╝╚═╝  ╚═══╝ ╚═════╝   ╚═══╝  ╚═╝     ╚═╝
+                                                         
+</pre>
 `nanoVM` is a **clean, from-scratch LC-3 virtual machine** implemented in C++.  
 It focuses on **correct ISA semantics, host safety, and debuggability**, rather than speed or OS emulation.
 
